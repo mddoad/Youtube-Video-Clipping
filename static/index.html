@@ -54,6 +54,10 @@ button.ghost{background:none;color:var(--ink);border:1.5px solid var(--line);pad
 .len{align-self:end;padding-bottom:10px;font-weight:600}
 .status{margin-top:12px;color:var(--muted);min-height:1.5em}
 .note{margin-top:36px;color:var(--muted);font-size:.85rem}
+.opts{display:flex;gap:18px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+.opts label{font-size:.9rem;color:var(--muted);display:flex;align-items:center;gap:8px}
+.opts select{padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit}
+.opts input[type=checkbox]{width:18px;height:18px;accent-color:var(--sel)}
 @media (max-width:480px){.sliders{grid-template-columns:1fr}}
 </style>
 </head>
@@ -109,6 +113,11 @@ button.ghost{background:none;color:var(--ink);border:1.5px solid var(--line);pad
     </div>
 
     <div class="sect">
+      <div class="opts">
+        <label>Quality <select id="q"><option value="480">480p (fastest)</option><option value="720" selected>720p</option><option value="1080">1080p (slowest)</option></select></label>
+        <label><input type="checkbox" id="exact"> Exact cut (slower)</label>
+      </div>
+      <p class="hint">Fast mode can start a few seconds early. Trimming the frame always gives an exact cut.</p>
       <button class="go" id="cut">Cut and download clip</button>
       <div class="status" id="status" aria-live="polite"></div>
     </div>
@@ -195,7 +204,7 @@ $("cut").onclick = async () => {
   $("cut").disabled = true; $("status").textContent = "Cutting your clip. This can take a minute…";
   try {
     const r = await fetch("/api/clip", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({url: $("url").value, start: s, end: e, crop})});
+      body: JSON.stringify({url: $("url").value, start: s, end: e, crop, quality: +$("q").value, precise: $("exact").checked})});
     if (!r.ok) throw new Error((await r.json()).error);
     const blob = await r.blob(), a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
