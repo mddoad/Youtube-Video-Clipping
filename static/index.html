@@ -13,37 +13,54 @@
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 "Instrument Sans",system-ui,sans-serif;min-height:100vh}
 main{max-width:720px;margin:0 auto;padding:48px 20px 80px}
 h1{font:800 clamp(2.4rem,7vw,3.6rem)/1 "Bricolage Grotesque",sans-serif;letter-spacing:-.03em;margin:0 0 10px}
+h2{font:600 1.05rem "Instrument Sans",sans-serif;margin:0 0 4px}
 .lead{color:var(--muted);margin:0 0 32px;max-width:48ch}
 .row{display:flex;gap:10px}
 input[type=text]{flex:1;min-width:0;padding:14px 16px;border:1.5px solid var(--line);border-radius:var(--r);background:var(--panel);color:var(--ink);font:inherit}
 button{font:600 1rem "Instrument Sans",sans-serif;padding:14px 22px;border:0;border-radius:var(--r);background:var(--ink);color:var(--bg);cursor:pointer}
 button:disabled{opacity:.5;cursor:wait}
 button.go{background:var(--sel);color:#10303a}
+button.ghost{background:none;color:var(--ink);border:1.5px solid var(--line);padding:8px 14px;font-size:.9rem}
 :focus-visible{outline:3px solid var(--sel);outline-offset:2px}
 #err{color:var(--err);min-height:1.5em;margin:10px 0 0}
 #editor{display:none;margin-top:28px;background:var(--panel);border:1.5px solid var(--line);border-radius:var(--r);overflow:hidden}
-.thumb{display:flex;gap:16px;padding:16px;align-items:center;border-bottom:1.5px solid var(--line)}
-.thumb img{width:128px;aspect-ratio:16/9;object-fit:cover;border-radius:6px;background:var(--line)}
-.thumb b{display:block;font-weight:600}.thumb span{color:var(--muted);font-size:.9rem}
-.body{padding:24px 16px 20px}
-.track{position:relative;height:56px;margin:6px 0 4px;border-radius:8px;background:repeating-linear-gradient(90deg,var(--line) 0 2px,transparent 2px 14px);}
+.head{padding:16px;border-bottom:1.5px solid var(--line)}
+.head b{display:block;font-weight:600}.head span{color:var(--muted);font-size:.9rem}
+.sect{padding:20px 16px;border-bottom:1.5px solid var(--line)}
+.sect:last-child{border-bottom:0}
+.hint{color:var(--muted);font-size:.9rem;margin:0 0 14px}
+
+/* frame preview */
+.frame{position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:8px;overflow:hidden;margin-bottom:16px}
+.frame img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.dim{position:absolute;background:rgba(0,0,0,.68)}
+.win{position:absolute;border:2px solid var(--sel);box-shadow:0 0 0 1px rgba(0,0,0,.4)}
+.sliders{display:grid;grid-template-columns:1fr 1fr;gap:12px 20px}
+.sl label{display:flex;justify-content:space-between;font-size:.9rem;color:var(--muted)}
+.sl label span{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+.sl input{width:100%;accent-color:var(--sel)}
+.presets{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+
+/* time range */
+.track{position:relative;height:56px;margin:6px 0 4px;border-radius:8px;background:repeating-linear-gradient(90deg,var(--line) 0 2px,transparent 2px 14px)}
 .fill{position:absolute;top:0;bottom:0;background:var(--sel);opacity:.55;border-radius:6px;pointer-events:none}
 .track input[type=range]{position:absolute;inset:0;width:100%;height:100%;margin:0;background:none;pointer-events:none;-webkit-appearance:none;appearance:none}
 .track input::-webkit-slider-thumb{-webkit-appearance:none;pointer-events:auto;width:14px;height:64px;border-radius:5px;background:var(--ink);border:3px solid var(--sel);cursor:ew-resize}
 .track input::-moz-range-thumb{pointer-events:auto;width:8px;height:58px;border-radius:5px;background:var(--ink);border:3px solid var(--sel);cursor:ew-resize}
 .ends{display:flex;justify-content:space-between;color:var(--muted);font-size:.85rem;font-variant-numeric:tabular-nums}
-.times{display:flex;gap:16px;margin:22px 0;flex-wrap:wrap}
+.times{display:flex;gap:16px;margin:22px 0 0;flex-wrap:wrap}
 .times label{flex:1;min-width:130px;font-size:.9rem;color:var(--muted)}
 .times input{display:block;width:100%;margin-top:4px;padding:10px 12px;border:1.5px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:600 1.1rem "Instrument Sans";font-variant-numeric:tabular-nums}
 .len{align-self:end;padding-bottom:10px;font-weight:600}
 .status{margin-top:12px;color:var(--muted);min-height:1.5em}
 .note{margin-top:36px;color:var(--muted);font-size:.85rem}
+@media (max-width:480px){.sliders{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <main>
   <h1>Cut a clip from any YouTube video</h1>
-  <p class="lead">Paste a link, drag the yellow range to the part you want, and download it as an MP4.</p>
+  <p class="lead">Paste a link, choose the frame and the time range, then download the clip as an MP4.</p>
 
   <div class="row">
     <input id="url" type="text" inputmode="url" placeholder="https://www.youtube.com/watch?v=…" aria-label="YouTube link">
@@ -52,8 +69,32 @@ button.go{background:var(--sel);color:#10303a}
   <p id="err" role="alert"></p>
 
   <section id="editor">
-    <div class="thumb"><img id="img" alt=""><div><b id="title"></b><span id="dur"></span></div></div>
-    <div class="body">
+    <div class="head"><b id="title"></b><span id="dur"></span></div>
+
+    <div class="sect">
+      <h2>Frame</h2>
+      <p class="hint">Trim the edges to leave out anything at the top, bottom or sides. The bright box is what you keep.</p>
+      <div class="frame" id="frame">
+        <img id="img" alt="Video preview">
+        <div class="dim" id="dT"></div><div class="dim" id="dB"></div>
+        <div class="dim" id="dL"></div><div class="dim" id="dR"></div>
+        <div class="win" id="win"></div>
+      </div>
+      <div class="sliders">
+        <div class="sl"><label for="cT">Trim top <span id="vT">0%</span></label><input type="range" id="cT" min="0" max="45" value="0"></div>
+        <div class="sl"><label for="cB">Trim bottom <span id="vB">0%</span></label><input type="range" id="cB" min="0" max="45" value="0"></div>
+        <div class="sl"><label for="cL">Trim left <span id="vL">0%</span></label><input type="range" id="cL" min="0" max="45" value="0"></div>
+        <div class="sl"><label for="cR">Trim right <span id="vR">0%</span></label><input type="range" id="cR" min="0" max="45" value="0"></div>
+      </div>
+      <div class="presets">
+        <button class="ghost" id="pTop">Trim top 8%</button>
+        <button class="ghost" id="pBot">Trim bottom 8%</button>
+        <button class="ghost" id="pReset">Reset frame</button>
+      </div>
+    </div>
+
+    <div class="sect">
+      <h2>Time range</h2>
       <div class="track" id="track">
         <div class="fill" id="fill"></div>
         <input type="range" id="rs" min="0" value="0" aria-label="Start">
@@ -65,6 +106,9 @@ button.go{background:var(--sel);color:#10303a}
         <label>End<input id="te" type="text" value="0:10"></label>
         <div class="len" id="len"></div>
       </div>
+    </div>
+
+    <div class="sect">
       <button class="go" id="cut">Cut and download clip</button>
       <div class="status" id="status" aria-live="polite"></div>
     </div>
@@ -76,12 +120,35 @@ button.go{background:var(--sel);color:#10303a}
 <script>
 const $ = id => document.getElementById(id);
 let video = null;
+const MAX_CLIP = 3600;
 const fmt = s => { s = Math.round(s); const h = Math.floor(s/3600), m = Math.floor(s%3600/60), x = s%60;
   return (h ? h+":"+String(m).padStart(2,"0") : m)+":"+String(x).padStart(2,"0"); };
 const parse = t => { const p = t.trim().split(":").map(Number); if (p.some(isNaN)) return NaN;
   return p.reduce((a,b)=>a*60+b,0); };
 const showErr = m => $("err").textContent = m || "";
 
+/* ---------- frame (crop) ---------- */
+const edges = {T:"cT", B:"cB", L:"cL", R:"cR"};
+function drawFrame(changed) {
+  let v = {}; for (const k in edges) v[k] = +$(edges[k]).value;
+  // keep at least 10% of the frame in each direction
+  if (v.T + v.B > 90) { if (changed === "T") v.T = 90 - v.B; else v.B = 90 - v.T; }
+  if (v.L + v.R > 90) { if (changed === "L") v.L = 90 - v.R; else v.R = 90 - v.L; }
+  for (const k in edges) { $(edges[k]).value = v[k]; $("v"+k).textContent = v[k] + "%"; }
+  const s = (el, o) => Object.assign($(el).style, o);
+  s("dT", {top:0,left:0,right:0,height:v.T+"%"});
+  s("dB", {bottom:0,left:0,right:0,height:v.B+"%"});
+  s("dL", {top:v.T+"%",bottom:v.B+"%",left:0,width:v.L+"%"});
+  s("dR", {top:v.T+"%",bottom:v.B+"%",right:0,width:v.R+"%"});
+  s("win", {top:v.T+"%",bottom:v.B+"%",left:v.L+"%",right:v.R+"%"});
+}
+for (const k in edges) $(edges[k]).oninput = () => drawFrame(k);
+const setFrame = (t,b,l,r) => { $("cT").value=t; $("cB").value=b; $("cL").value=l; $("cR").value=r; drawFrame(); };
+$("pTop").onclick = () => setFrame(8, +$("cB").value, +$("cL").value, +$("cR").value);
+$("pBot").onclick = () => setFrame(+$("cT").value, 8, +$("cL").value, +$("cR").value);
+$("pReset").onclick = () => setFrame(0,0,0,0);
+
+/* ---------- time range ---------- */
 function sync(from) {
   let s = +$("rs").value, e = +$("re").value;
   if (from === "s" && s >= e) s = e - 1;
@@ -98,6 +165,7 @@ $("re").oninput = () => sync("e");
 $("ts").onchange = () => { const v = parse($("ts").value); if (!isNaN(v)) $("rs").value = v; sync("s"); };
 $("te").onchange = () => { const v = parse($("te").value); if (!isNaN(v)) $("re").value = v; sync("e"); };
 
+/* ---------- load video ---------- */
 $("load").onclick = async () => {
   showErr(""); $("editor").style.display = "none"; $("status").textContent = "";
   $("load").disabled = true; $("load").textContent = "Loading…";
@@ -108,23 +176,26 @@ $("load").onclick = async () => {
     if (!r.ok) throw new Error(d.error);
     video = d;
     $("img").src = d.thumbnail || ""; $("title").textContent = d.title;
+    $("frame").style.aspectRatio = (d.width && d.height) ? `${d.width} / ${d.height}` : "16 / 9";
     $("dur").textContent = "Duration " + fmt(d.duration);
     $("endlabel").textContent = fmt(d.duration);
     for (const id of ["rs","re"]) $(id).max = d.duration;
     $("rs").value = 0; $("re").value = Math.min(10, d.duration);
-    $("editor").style.display = "block"; sync("e");
+    $("editor").style.display = "block"; setFrame(0,0,0,0); sync("e");
   } catch (e) { showErr(e.message || "Something went wrong."); }
   $("load").disabled = false; $("load").textContent = "Load video";
 };
 $("url").addEventListener("keydown", e => { if (e.key === "Enter") $("load").click(); });
 
+/* ---------- cut ---------- */
 $("cut").onclick = async () => {
   showErr(""); const s = +$("rs").value, e = +$("re").value;
-  if (e - s > 600) return showErr("Clips can be at most 10 minutes.");
+  if (e - s > MAX_CLIP) return showErr("Clips can be at most 60 minutes.");
+  const crop = {top:+$("cT").value/100, bottom:+$("cB").value/100, left:+$("cL").value/100, right:+$("cR").value/100};
   $("cut").disabled = true; $("status").textContent = "Cutting your clip. This can take a minute…";
   try {
     const r = await fetch("/api/clip", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({url: $("url").value, start: s, end: e})});
+      body: JSON.stringify({url: $("url").value, start: s, end: e, crop})});
     if (!r.ok) throw new Error((await r.json()).error);
     const blob = await r.blob(), a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
