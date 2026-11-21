@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ClipCutter</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;800&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#e9eef0;--ink:#10303a;--muted:#5b7580;--panel:#fff;--line:#c9d6db;--sel:#ffcf33;--err:#b3261e;--r:10px}
+@media (prefers-color-scheme:dark){:root{--bg:#0d1d23;--ink:#e6f0f3;--muted:#8ba5af;--panel:#142a32;--line:#27424c;--sel:#ffcf33;--err:#ff8a80}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 "Instrument Sans",system-ui,sans-serif;min-height:100vh}
+main{max-width:720px;margin:0 auto;padding:48px 20px 80px}
+h1{font:800 clamp(2.4rem,7vw,3.6rem)/1 "Bricolage Grotesque",sans-serif;letter-spacing:-.03em;margin:0 0 10px}
+.lead{color:var(--muted);margin:0 0 32px;max-width:48ch}
+.row{display:flex;gap:10px}
+input[type=text]{flex:1;min-width:0;padding:14px 16px;border:1.5px solid var(--line);border-radius:var(--r);background:var(--panel);color:var(--ink);font:inherit}
+button{font:600 1rem "Instrument Sans",sans-serif;padding:14px 22px;border:0;border-radius:var(--r);background:var(--ink);color:var(--bg);cursor:pointer}
+button:disabled{opacity:.5;cursor:wait}
+button.go{background:var(--sel);color:#10303a}
+:focus-visible{outline:3px solid var(--sel);outline-offset:2px}
+#err{color:var(--err);min-height:1.5em;margin:10px 0 0}
+#editor{display:none;margin-top:28px;background:var(--panel);border:1.5px solid var(--line);border-radius:var(--r);overflow:hidden}
+.thumb{display:flex;gap:16px;padding:16px;align-items:center;border-bottom:1.5px solid var(--line)}
+.thumb img{width:128px;aspect-ratio:16/9;object-fit:cover;border-radius:6px;background:var(--line)}
+.thumb b{display:block;font-weight:600}.thumb span{color:var(--muted);font-size:.9rem}
+.body{padding:24px 16px 20px}
+.track{position:relative;height:56px;margin:6px 0 4px;border-radius:8px;background:repeating-linear-gradient(90deg,var(--line) 0 2px,transparent 2px 14px);}
+.fill{position:absolute;top:0;bottom:0;background:var(--sel);opacity:.55;border-radius:6px;pointer-events:none}
+.track input[type=range]{position:absolute;inset:0;width:100%;height:100%;margin:0;background:none;pointer-events:none;-webkit-appearance:none;appearance:none}
+.track input::-webkit-slider-thumb{-webkit-appearance:none;pointer-events:auto;width:14px;height:64px;border-radius:5px;background:var(--ink);border:3px solid var(--sel);cursor:ew-resize}
+.track input::-moz-range-thumb{pointer-events:auto;width:8px;height:58px;border-radius:5px;background:var(--ink);border:3px solid var(--sel);cursor:ew-resize}
+.ends{display:flex;justify-content:space-between;color:var(--muted);font-size:.85rem;font-variant-numeric:tabular-nums}
+.times{display:flex;gap:16px;margin:22px 0;flex-wrap:wrap}
+.times label{flex:1;min-width:130px;font-size:.9rem;color:var(--muted)}
+.times input{display:block;width:100%;margin-top:4px;padding:10px 12px;border:1.5px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:600 1.1rem "Instrument Sans";font-variant-numeric:tabular-nums}
+.len{align-self:end;padding-bottom:10px;font-weight:600}
+.status{margin-top:12px;color:var(--muted);min-height:1.5em}
+.note{margin-top:36px;color:var(--muted);font-size:.85rem}
+</style>
+</head>
+<body>
+<main>
+  <h1>Cut a clip from any YouTube video</h1>
+  <p class="lead">Paste a link, drag the yellow range to the part you want, and download it as an MP4.</p>
+
+  <div class="row">
+    <input id="url" type="text" inputmode="url" placeholder="https://www.youtube.com/watch?v=…" aria-label="YouTube link">
+    <button id="load">Load video</button>
+  </div>
+  <p id="err" role="alert"></p>
+
+  <section id="editor">
+    <div class="thumb"><img id="img" alt=""><div><b id="title"></b><span id="dur"></span></div></div>
+    <div class="body">
+      <div class="track" id="track">
+        <div class="fill" id="fill"></div>
+        <input type="range" id="rs" min="0" value="0" aria-label="Start">
+        <input type="range" id="re" min="0" value="0" aria-label="End">
+      </div>
+      <div class="ends"><span>0:00</span><span id="endlabel"></span></div>
+      <div class="times">
+        <label>Start<input id="ts" type="text" value="0:00"></label>
+        <label>End<input id="te" type="text" value="0:10"></label>
+        <div class="len" id="len"></div>
+      </div>
+      <button class="go" id="cut">Cut and download clip</button>
+      <div class="status" id="status" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <p class="note">Only clip videos you own, that are Creative Commons licensed, or that you have permission to use. Clips are limited to 10 minutes.</p>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let video = null;
+const fmt = s => { s = Math.round(s); const h = Math.floor(s/3600), m = Math.floor(s%3600/60), x = s%60;
+  return (h ? h+":"+String(m).padStart(2,"0") : m)+":"+String(x).padStart(2,"0"); };
+const parse = t => { const p = t.trim().split(":").map(Number); if (p.some(isNaN)) return NaN;
+  return p.reduce((a,b)=>a*60+b,0); };
+const showErr = m => $("err").textContent = m || "";
+
+function sync(from) {
+  let s = +$("rs").value, e = +$("re").value;
+  if (from === "s" && s >= e) s = e - 1;
+  if (from === "e" && e <= s) e = s + 1;
+  s = Math.max(0, s); e = Math.min(video.duration, e);
+  $("rs").value = s; $("re").value = e;
+  $("ts").value = fmt(s); $("te").value = fmt(e);
+  const p = video.duration;
+  $("fill").style.left = s/p*100+"%"; $("fill").style.width = (e-s)/p*100+"%";
+  $("len").textContent = "Length " + fmt(e-s);
+}
+$("rs").oninput = () => sync("s");
+$("re").oninput = () => sync("e");
+$("ts").onchange = () => { const v = parse($("ts").value); if (!isNaN(v)) $("rs").value = v; sync("s"); };
+$("te").onchange = () => { const v = parse($("te").value); if (!isNaN(v)) $("re").value = v; sync("e"); };
+
+$("load").onclick = async () => {
+  showErr(""); $("editor").style.display = "none"; $("status").textContent = "";
+  $("load").disabled = true; $("load").textContent = "Loading…";
+  try {
+    const r = await fetch("/api/info", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({url: $("url").value})});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error);
+    video = d;
+    $("img").src = d.thumbnail || ""; $("title").textContent = d.title;
+    $("dur").textContent = "Duration " + fmt(d.duration);
+    $("endlabel").textContent = fmt(d.duration);
+    for (const id of ["rs","re"]) $(id).max = d.duration;
+    $("rs").value = 0; $("re").value = Math.min(10, d.duration);
+    $("editor").style.display = "block"; sync("e");
+  } catch (e) { showErr(e.message || "Something went wrong."); }
+  $("load").disabled = false; $("load").textContent = "Load video";
+};
+$("url").addEventListener("keydown", e => { if (e.key === "Enter") $("load").click(); });
+
+$("cut").onclick = async () => {
+  showErr(""); const s = +$("rs").value, e = +$("re").value;
+  if (e - s > 600) return showErr("Clips can be at most 10 minutes.");
+  $("cut").disabled = true; $("status").textContent = "Cutting your clip. This can take a minute…";
+  try {
+    const r = await fetch("/api/clip", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({url: $("url").value, start: s, end: e})});
+    if (!r.ok) throw new Error((await r.json()).error);
+    const blob = await r.blob(), a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = (video.title || "clip").replace(/[^\w\- ]+/g,"").trim().slice(0,60) + ` ${fmt(s)}-${fmt(e)}.mp4`.replace(/:/g,"-");
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href);
+    $("status").textContent = "Clip downloaded.";
+  } catch (err) { $("status").textContent = ""; showErr(err.message || "Clipping failed."); }
+  $("cut").disabled = false;
+};
+</script>
+</body>
+</html>
