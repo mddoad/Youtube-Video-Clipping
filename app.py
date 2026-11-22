@@ -6,7 +6,7 @@ from yt_dlp.utils import download_range_func
 app = Flask(__name__, static_folder="static", static_url_path="")
 
 MAX_CLIP_SECONDS = 60 * 60          # longest clip allowed (60 min)
-MAX_VIDEO_SECONDS = 24 * 60 * 60    # longest source video allowed (24 hours)
+MAX_VIDEO_SECONDS = 60 * 60 * 60    # longest source video allowed (24 hours)
 MAX_CROP_EDGE = 0.45                # max share of one edge you can trim
 YT_RE = re.compile(r"^https?://(www\.|m\.)?(youtube\.com|youtu\.be)/", re.I)
 
@@ -31,15 +31,17 @@ def read_crop(raw):
     return t, b, l, r
 
 
-def crop_video(src, dst, t, b, l, r):
-    """Crop with ffmpeg. Sizes are rounded to even numbers (required by H.264)."""
+def crop_video(src, dst, t, b, l, r, ss=0.0, dur=None):
+    """Trim accurately and crop in ONE encode. Sizes are rounded to even numbers."""
     vf = (
         f"crop=w='trunc(iw*(1-{l}-{r})/2)*2':h='trunc(ih*(1-{t}-{b})/2)*2':"
         f"x='trunc(iw*{l}/2)*2':y='trunc(ih*{t}/2)*2'"
     )
-    cmd = ["ffmpeg", "-y", "-loglevel", "error", "-i", src, "-vf", vf,
-           "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-           "-c:a", "copy", "-movflags", "+faststart", dst]
+    cmd = ["ffmpeg", "-y", "-loglevel", "error", "-ss", str(ss), "-i", src]
+    if dur:
+        cmd += ["-t", str(dur)]
+    cmd += ["-vf", vf, "-c:v", "libx264", "-preset", "superfast", "-crf", "23",
+            "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", dst]
     subprocess.run(cmd, check=True, timeout=60 * 60)
 
 
@@ -87,16 +89,30 @@ def clip():
     except ValueError as e:
         return jsonify(error=str(e)), 400
 
+    try:
+        quality = int(body.get("quality", 720))
+    except (TypeError, ValueError):
+        quality = 720
+    quality = quality if quality in (360, 480, 720, 1080) else 720
+    precise = bool(body.get("precise", False))
+    use_crop = bool(t or b or l or r)
+
+    # Fast path = stream copy (no re-encode). Crop needs one accurate re-encode.
+    # When cropping, grab a few extra seconds before the start, then trim exactly.
+    pad = min(start, 5.0) if use_crop else 0.0
+    dl_start = start - pad
+
     workdir = tempfile.mkdtemp(prefix="clip_")
     out_tpl = os.path.join(workdir, f"{uuid.uuid4().hex}.%(ext)s")
     opts = {
         "quiet": True,
         "noplaylist": True,
-        "format": "bv*[height<=1080]+ba/b[height<=1080]/b",
+        "format": f"bv*[height<={quality}]+ba/b[height<={quality}]/b",
         "merge_output_format": "mp4",
         "outtmpl": out_tpl,
-        "download_ranges": download_range_func(None, [(start, end)]),
-        "force_keyframes_at_cuts": True,
+        "download_ranges": download_range_func(None, [(dl_start, end)]),
+        "force_keyframes_at_cuts": bool(precise and not use_crop),
+        "concurrent_fragment_downloads": 8,
     }
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
@@ -106,9 +122,9 @@ def clip():
             raise RuntimeError("no output")
         path = os.path.join(workdir, files[0])
 
-        if t or b or l or r:
+        if use_crop:
             cropped = os.path.join(workdir, "cropped.mp4")
-            crop_video(path, cropped, t, b, l, r)
+            crop_video(path, cropped, t, b, l, r, ss=pad, dur=end - start)
             path = cropped
     except Exception:
         shutil.rmtree(workdir, ignore_errors=True)
